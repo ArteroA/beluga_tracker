@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.sqlite3
+*.log
+data/  # Consider carefully what to exclude/include in data/
+.DS_Store
+credentials.json
+token.json
