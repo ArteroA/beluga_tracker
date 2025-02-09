@@ -96,7 +96,7 @@ if __name__ == '__main__':
         print("Failed to load model.")
         exit()
 
-    video_path = 'data/videos/test_video1.mp4'  # path to video file 
+    video_path = 'data/videos/test_video2.mp4'  # path to video file 
     if not os.path.exists(video_path):
         print(f"Error: Video file not found at {video_path}")
         exit()
