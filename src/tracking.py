@@ -1,50 +1,69 @@
 from src.bytetrack.byte_tracker import BYTETracker
-import torch  # Import PyTorch
+import torch
+import numpy as np
 
 class Track:
-    """Represents a single tracked object (beluga whale)."""
-
+    """Represents a single tracked object."""
     def __init__(self, track_id, tlbr):
-        """Initializes a Track object.
-
-        Args:
-            track_id (int): The unique ID assigned to the track.
-            tlbr (list): Top-left-bottom-right bounding box coordinates: [x1, y1, x2, y2].
-        """
         self.track_id = track_id
-        self.tlbr = tlbr  # Store as top-left-bottom-right
+        self.tlbr = tlbr
 
+class TensorDictWrapper:
+    """Wraps a tensor to make it look like a dictionary to ByteTrack."""
+    def __init__(self, tensor):
+        self.tensor = tensor
 
-def track_belugas(detections_across_frames):
-    """Tracks beluga whales across multiple frames using ByteTrack.
+    def __getitem__(self, key):
+        if key == "scores":
+            return self.tensor[:, 4]  # 5th element is confidence
+        elif key == "boxes":
+            return self.tensor[:, :4]  # First 4 elements are bbox
+        elif key == "labels":
+            # ByteTrack might access this, even though it doesn't use it.
+            return torch.zeros_like(self.tensor[:, 4], dtype=torch.int64)
+        else:
+            raise KeyError(f"Invalid key: {key}")
 
-    Args:
-        detections_across_frames (list): A list of lists.  Each inner list
-            contains the detections for a single frame (output of detect_belugas).
+    def cpu(self):
+        return self  # Already on CPU (or handle device transfer)
+    def numpy(self):
+      return self.tensor.numpy()
 
-    Returns:
-        list: A list of Track objects, representing the tracked whales in the *current* frame.
-              Returns an empty list if there are no detections.
-    """
-    tracker = BYTETracker()  # Initialize a BYTETracker object
+    def to(self, device):
+        return TensorDictWrapper(self.tensor.to(device))
+
+def track_belugas(detections, tracker):
+    """Tracks beluga whales using ByteTrack."""
+
     all_tracks = []
+    bytetrack_inputs = []
 
-    for frame_detections in detections_across_frames:
-        # Prepare input for ByteTrack.  It expects a list of detections in the
-        # format [x1, y1, x2, y2, confidence].
-        bytetrack_inputs = []
-        for x1, y1, x2, y2, conf, cls in frame_detections:
-            bytetrack_inputs.append([x1, y1, x2, y2, conf])
+    for x1, y1, x2, y2, conf, cls in detections:
+        bytetrack_inputs.append([x1, y1, x2, y2, conf])
 
-        # Update the tracker with the current frame's detections.
-        # online_targets is a list of STrack objects (ByteTrack's internal representation).
-        online_targets = tracker.update(torch.tensor(bytetrack_inputs))
+    if not bytetrack_inputs:
+        return []
 
-        # Extract track information from the STrack objects.
-        for t in online_targets:
-            tlwh = t.tlwh  # Top-left x, y, width, height
-            tid = t.track_id  # The unique track ID
-            tlbr = [tlwh[0], tlwh[1], tlwh[0] + tlwh[2], tlwh[1] + tlwh[3]]  # Convert to tlbr
-            all_tracks.append(Track(track_id=tid, tlbr=tlbr))
+    bytetrack_inputs = torch.tensor(bytetrack_inputs)
+    if bytetrack_inputs.ndim == 1:
+        bytetrack_inputs = bytetrack_inputs.unsqueeze(0)
+
+    if bytetrack_inputs.numel() > 0:
+        wrapped_input = TensorDictWrapper(bytetrack_inputs)
+        online_targets = tracker.update(wrapped_input)
+        # print("online_targets:", online_targets)   <-- Keep this for debugging if needed
+    else:
+        online_targets = []
+
+    for t in online_targets:
+        
+        bbox = t["bbox"]      # Get the bbox array
+        track_id = t["tracking_id"]  # Get the tracking ID
+        x1, y1, x2, y2 = bbox  # Unpack the bbox coordinates
+        w = x2 - x1           # Calculate width
+        h = y2 - y1           # Calculate height
+        tlwh = [x1, y1, w, h]  # Create tlwh format
+        tlbr = [x1, y1, x2, y2]
+        all_tracks.append(Track(track_id=track_id, tlbr=tlbr))
 
     return all_tracks
