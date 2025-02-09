@@ -3,7 +3,7 @@ from ultralytics import YOLO  # Import the YOLOv8 class
 
 
 def load_model(model_path):
-    """Loads a YOLOv8 model from the specified path.
+    """Loads the YOLOv8 model from the specified path.
 
     Args:
         model_path (str): The path to the YOLOv8 model file (.pt).
@@ -19,7 +19,7 @@ def load_model(model_path):
         return None
 
 
-def detect_belugas(model, image, conf_thres=0.25, iou_thres=0.45):
+def detect_belugas(model, image, conf_thres=0.5, iou_thres=0.45):
     """Detects beluga whales in a single image frame.
 
     Args:
