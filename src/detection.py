@@ -19,7 +19,7 @@ def load_model(model_path):
         return None
 
 
-def detect_belugas(model, image, conf_thres=0.5, iou_thres=0.45):
+def detect_belugas(model, image, conf_thres=0.30, iou_thres=0.45):
     """Detects beluga whales in a single image frame.
 
     Args:
@@ -34,8 +34,7 @@ def detect_belugas(model, image, conf_thres=0.5, iou_thres=0.45):
               Returns None if there's an error or no detections.
     """
     try:
-        # Perform inference.  The results object contains all the information
-        # about the detections.
+        # Perform inference.  The results object contains all the information about the detections.
         results = model.predict(image, conf=conf_thres, iou=iou_thres, verbose=False)
 
         # results is a list, where each element corresponds to an image in a batch.

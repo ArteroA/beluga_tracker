@@ -1,48 +1,73 @@
+# main.py (Complete Demo Version)
 import cv2
-from src.detection import load_model, detect_belugas # import model and functions to detect
-from src.tracking import track_belugas, Track # import functions to integrate tracking with Bytetrack
-from src.bytetrack.byte_tracker import BYTETracker # import ByteTracker functions to track 
+from src.detection import load_model, detect_belugas
+from src.tracking import track_belugas, Track
+from src.bytetrack.byte_tracker import BYTETracker
 import os
 import argparse
 
-"""Draws bounding boxes with different colors for adults, calves, and unknowns."""
 def draw_boxes(image, detections, tracks=None):
-    
-    # if an object is detected, then...
+    """Draws bounding boxes with different colors for adults and calves."""
     if detections:
         for x1, y1, x2, y2, conf, cls in detections:
             x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
 
-            # based on the class, assign corresponding label and color
-            if cls == 0:  # 0 is adult
-                color = (0, 0, 255)  # Red for adults
-                label = f"Adult Beluga: {conf:.2f}"
-
-            elif cls == 1:  # 1 is calf
-                color = (206, 255, 0)  # Cyan for calves
+            # DEMO Classification -- Defaults to "Adult" for demo purposes. Model still needs more training
+            if cls == 1:  # 1 is calf
+                color = (0, 0, 255)  # Red
                 label = f"Calf: {conf:.2f}"
+            else: # 0 defaults to Adult 
+                color = (0, 255, 0)  # Green
+                label = f"Adult: {conf:.2f}"
 
-            # --- At the moment, our footage does not include any unknowns, if we find data with other objects like boats, other animals, swimmers, etc. we can then add unkowns as another class ---   
-            else:
-                color = (255, 255, 255)  # White for unknown
-                label = f"Unknown: {conf:.2f}"
+            # Actual Classification conditions, pending a model dedicated to beluga whales
+            # if cls == 0:  # 0 is adult
+            #    color = (0, 255, 0)  # Green
+            #    label = f"Adult: {conf:.2f}"
+            # elif cls == 1:  # 1 is calf
+            #    color = (0, 0, 255)  # Red
+            #    label = f"Calf: {conf:.2f}"
+            # else:
+            #    color = (255, 255, 255) # White
+            #    label = f"Unknown (Class {cls}): {conf:.2f}"
 
-            # annotates the frame with a bounding box and label 
             cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
             cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
-    # if the object is tracked across multiple frames, then...
     if tracks:
         for track in tracks:
             x1, y1, x2, y2 = map(int, track.tlbr)
             track_id = track.track_id
-            # blue for tracked objects 
-            cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for tracks
             cv2.putText(image, str(track_id), (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+
     return image
 
+# - - - First version allowed for single image detection and "tracking"
+
+def process_image(model, image_path, args):
+    """Processes a single image."""
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Error: Could not read image at {image_path}")
+        return
+
+    detections = detect_belugas(model, image)
+    if detections is not None:
+        # Create "tracks" for single-frame display (as before)
+        tracks = [Track(track_id=i + 1, tlbr=[x1, y1, x2, y2]) for i, (x1, y1, x2, y2, _, _) in enumerate(detections)]
+        image_with_boxes = draw_boxes(image, detections, tracks)
+        cv2.imshow("Image Detection", image_with_boxes)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    else:
+        print("No detections found.")
+
+
+# - - - Second version allowed for video detection and tracking
 
 def process_video(model, video_path, args, output_path=None):
+    """Processes a video (same as before, but uses 'args')."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"Error: Could not open video at {video_path}")
@@ -72,7 +97,6 @@ def process_video(model, video_path, args, output_path=None):
         else:
             frame_with_boxes = draw_boxes(frame, detections)
 
-
         if out:
             out.write(frame_with_boxes)
         else:
@@ -86,43 +110,51 @@ def process_video(model, video_path, args, output_path=None):
         out.release()
     cv2.destroyAllWindows()
 
-
-
 if __name__ == '__main__':
-    model_path = 'models/yolov8n.pt'  # Path to YOLOv8 model
+    parser = argparse.ArgumentParser(description="Beluga Whale Detection and Tracking Demo")
+    parser.add_argument("mode", choices=['image', 'video'], help="Process an image or a video")
+    parser.add_argument("path", help="Path to the image or video file")
+    parser.add_argument("-o", "--output", help="Output video path (for video mode)", default=None)
+    parser.add_argument("-t", "--track_thresh", type=float, default=0.5, help="Tracking confidence threshold")
+    parser.add_argument("-n", "--num_queries", type=int, default=100, help="Number of queries for ByteTrack")
+
+    args = parser.parse_args()
+
+    model_path = 'models/yolov8n.pt'  # Or your trained model
     model = load_model(model_path)
 
     if model is None:
         print("Failed to load model.")
         exit()
 
-    video_path = 'data/videos/test_video2.mp4'  # path to video file 
-    if not os.path.exists(video_path):
-        print(f"Error: Video file not found at {video_path}")
-        exit()
+    # Create a Namespace object for BYTETracker 
+    tracker_args = argparse.Namespace()
+    tracker_args.track_thresh = args.track_thresh
+    tracker_args.num_queries = args.num_queries
 
-    args = argparse.Namespace()
-    args.track_thresh = 0.5  # Adjustable
-    args.num_queries = 100  # Adjustable
-
-
-    output_video_path = 'data/results/output_video.mp4'  # Choose an output path
-    process_video(model, video_path, args, output_video_path)
-    print(f"Output video saved to: {output_video_path}")
-
-
-    # Things to do: Train on our own data once fully annotated. Right now it is using the COCO dataset which contains 80 common object categories. Adding our on data will improve the accuracy of the model.
-        # Data collection
-        # Annotation and Labeling using roboflow around 192 videos (Should we utilize the roboflow training feature todriectly train our Yolov8 model)
-        # Creating the dataset of label images
-        # Training the current detection model. Either fine tune the existing model or train a new model
-            # Changing hyperparameters
-            # Running the training script
-            # Monitoring the progress
-            # Validation to get estimate of performance
-        # Evaluate on a test set to meausure accuracy
-        # Final deployment
-    # data/videos/test_video2.mp4
+    
+    if args.mode == 'image':
+        if not os.path.exists(args.path):
+            print(f"Error: Image file not found at {args.path}")
+            exit()
+        process_image(model, args.path, tracker_args)
+    elif args.mode == 'video':
+        if not os.path.exists(args.path):
+            print(f"Error: Video file not found at {args.path}")
+            exit()
+        process_video(model, args.path, tracker_args, args.output)
 
 
-        
+
+
+
+    # DEMO TESTS
+
+    # Process the image
+    # python -m src.main image data/test_images/test_image.jpg 
+
+    # Process the video and display the output
+    # python -m src.main video data/videos/test_video1.mp4
+
+    # Process the video and save the output to output.mp4
+    # python -m src.main video data/videos/test_video1.mp4 -o data/results/output.mp4
